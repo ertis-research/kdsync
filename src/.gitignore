@@ -1,0 +1,7 @@
+# binaries
+kdsync
+
+# eclipse
+.settings/
+.classpath
+.project
