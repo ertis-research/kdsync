@@ -1,7 +1,8 @@
 # binaries
-kdsync
+build/
 
-# eclipse
+# IDEs
 .settings/
 .classpath
 .project
+.vscode/
