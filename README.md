@@ -13,11 +13,11 @@ It is still in early development, so features are missing.
 
 ## How to build
 ```
-cd kdsync
+cd src
 make
 ```
 
 ## How to run
 ```
-./kdsync
+../build/kdsync
 ```
