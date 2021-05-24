@@ -1,5 +1,5 @@
 SRCDIR = .
-BUILDDIR = ../build
+BINDIR = ../bin
 EXECUTABLE = kdsync
 
 CXX = g++
@@ -7,14 +7,14 @@ FLAGS = -g
 LDLIBS = -lrdkafka -lcppkafka
 
 
-all: dir $(BUILDDIR)/$(EXECUTABLE)
+all: dir $(BINDIR)/$(EXECUTABLE)
 
 dir:
-	mkdir -p $(BUILDDIR)
+	mkdir -p $(BINDIR)
 
-$(BUILDDIR)/$(EXECUTABLE): $(SRCDIR)/kdsync.cpp
-	$(CXX) $(FLAGS) -o $(BUILDDIR)/$(EXECUTABLE) $(SRCDIR)/kdsync.cpp $(LDLIBS)
+$(BINDIR)/$(EXECUTABLE): $(SRCDIR)/kdsync.cpp
+	$(CXX) $(FLAGS) -o $(BINDIR)/$(EXECUTABLE) $(SRCDIR)/kdsync.cpp $(LDLIBS)
 
 
 clean:
-	rm -f $(BUILDDIR)/*
+	rm -f $(BINDIR)/*
