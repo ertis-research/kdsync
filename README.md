@@ -11,16 +11,25 @@ It is still in early development, so features are missing.
 ### Option 1. Using Docker
 This option depends on this [derecho Docker container](https://github.com/ertis-research/docker-derecho).
 
-* Build kdsync image 
+* Build the kdsync image 
   ```
   docker build -t kdsync .
   ```
 
-* Run an instance. 
+* Run an instance from the image<br> 
   You can specify kdsync arguments as well as a derecho conf file in /etc/derecho/derecho.cfg
   ```
-  docker run -dit --name kdsync kdsync <args>
+  docker run -dit --name kdsync kdsync <cluster-brokers> <replicated-topic>
   ```
+  If kafka brokers are whithin the same machine:
+  * If running Docker in Linux:<br>
+   ```--network="host"``` option should be added to the run 
+   option:
+    ```
+    docker run --network="host" -dit --name kdsync kdsync <cluster-brokers> <replicated-topic>
+    ```
+  * If running Docker for Windows or Mac:<br>
+   Use ```host.docker.internal``` instead of ```localhost``` in broker addresses.
 
 
 ### Option 2. Manual build
@@ -39,6 +48,6 @@ This option depends on this [derecho Docker container](https://github.com/ertis-
   ```
 
 * ```
-  ./kdsync <kafka-brokers> <replicated-topic>
+  ./kdsync <cluster-brokers> <replicated-topic>
   ```
 

@@ -1,0 +1,23 @@
+version: "3"
+services:
+    kdsync0:
+        container_name: kdsync0
+        network_mode: host
+        build: ../../.. # Project root Dockerfile
+        command: localhost:9092,localhost:9093
+        volumes:
+            - ./config/derecho_0.cfg:/etc/derecho/derecho.cfg
+        stdin_open: true # docker run -i
+        tty: true        # docker run -t
+        
+
+    kdsync1:
+        container_name: kdsync1
+        network_mode: host
+        build: ../../.. # Project root Dockerfile
+        command: localhost:9093,localhost:9094
+        volumes:
+            - ./config/derecho_1.cfg:/etc/derecho/derecho.cfg
+        stdin_open: true # docker run -i
+        tty: true        # docker run -t
+        
