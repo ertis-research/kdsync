@@ -2,18 +2,20 @@ SRCDIR = .
 BINDIR = ../bin
 EXECUTABLE = kdsync
 
-CXX = g++
-FLAGS = -g
-LDLIBS = -lrdkafka -lcppkafka
+CXXFLAGS = -std=c++17 
+LDFLAGS = -lrdkafka -lcppkafka -lderecho -pthread -lcrypto -lfmt -I../include
 
 
-all: dir $(BINDIR)/$(EXECUTABLE)
+all: $(BINDIR)/$(EXECUTABLE)
+
+debug: CXXFLAGS += -g
+debug: all
 
 dir:
 	mkdir -p $(BINDIR)
 
-$(BINDIR)/$(EXECUTABLE): $(SRCDIR)/kdsync.cpp
-	$(CXX) $(FLAGS) -o $(BINDIR)/$(EXECUTABLE) $(SRCDIR)/kdsync.cpp $(LDLIBS)
+$(BINDIR)/$(EXECUTABLE): dir
+	$(CXX) $(CXXFLAGS) -o $(BINDIR)/$(EXECUTABLE) $(SRCDIR)/kdsync.cpp $(LDFLAGS)
 
 
 clean:

@@ -15,6 +15,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Install dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
+        libssl-dev \
         git \
         build-essential \
         cmake \
@@ -31,6 +32,7 @@ RUN cmake .. && make && make install
 
 # Copy kdsnyc sources
 COPY src /kdsync/src
+COPY include /kdsync/include
 
 WORKDIR /kdsync/src
 

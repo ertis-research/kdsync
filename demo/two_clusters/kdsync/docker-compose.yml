@@ -6,7 +6,7 @@ services:
         build: ../../.. # Project root Dockerfile
         command: localhost:9092,localhost:9093
         volumes:
-            - ./config/derecho_0.cfg:/etc/derecho/derecho.cfg
+            - ./config/derecho_0_docker.cfg:/etc/derecho/derecho.cfg
         stdin_open: true # docker run -i
         tty: true        # docker run -t
         
@@ -17,7 +17,7 @@ services:
         build: ../../.. # Project root Dockerfile
         command: localhost:9093,localhost:9094
         volumes:
-            - ./config/derecho_1.cfg:/etc/derecho/derecho.cfg
+            - ./config/derecho_1_docker.cfg:/etc/derecho/derecho.cfg
         stdin_open: true # docker run -i
         tty: true        # docker run -t
         
