@@ -5,6 +5,8 @@
 #include <derecho/conf/conf.hpp>
 #include <derecho/core/derecho.hpp>
 #include "serializable_message.hpp"
+#include <chrono>
+#include <thread>
 
 using namespace std;
 using namespace cppkafka;
@@ -112,6 +114,13 @@ int main(int argc, char *argv[])
 	
 	while (true)
 	{
+		//TODO: REMOVE. ONLY FOR DEVELOPMENT DEBUG
+		std::this_thread::sleep_for(std::chrono::seconds(2));
+		derecho::QueryResults<string>results = message_rpc_handle.ordered_send<RPC_NAME(get_message)>();
+		for(auto& reply_pair: results.get()){
+			cout << "Instance: " << reply_pair.first << " Message: " << reply_pair.second.get() << endl;
+		}
+
 		// Poll. This will optionally return a message. It's necessary to check if it's a valid
 		// one before using it
 		Message msg = consumer.poll();
@@ -123,6 +132,10 @@ int main(int argc, char *argv[])
 				cout << msg.get_payload() << endl;
 
 				if(!is_already_processed(msg)){
+					//Send message to the other kdsync instances
+					message_rpc_handle.ordered_send<RPC_NAME(set_message)>((std::string)msg.get_payload());
+
+
 					//Create new message
 					MessageBuilder new_msg(msg);
 
