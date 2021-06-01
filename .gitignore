@@ -6,3 +6,6 @@ bin/
 .classpath
 .project
 .vscode/
+
+# Logs
+derecho_debug.log
