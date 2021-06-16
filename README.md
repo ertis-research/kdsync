@@ -48,6 +48,6 @@ This option depends on this [derecho Docker container](https://github.com/ertis-
   ```
 
 * ```
-  ./kdsync <cluster-brokers> <replicated-topic>
+  ./kdsync <number-of-instances> <cluster-brokers> <replicated-topic>
   ```
 

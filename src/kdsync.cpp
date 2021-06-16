@@ -1,159 +1,233 @@
-#include "spdlog/spdlog.h"
-#include <iostream>
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
+
+#include <chrono>
 #include <derecho/conf/conf.hpp>
 #include <derecho/core/derecho.hpp>
-#include "serializable_message.hpp"
-#include <chrono>
+#include <iostream>
 #include <thread>
+
+#include "serializable_objects.hpp"
+#include "spdlog/spdlog.h"
 
 using namespace std;
 using namespace cppkafka;
 
-const string KAFKA_TOPIC = "test";
-const string KAFKA_BROKERS = "127.0.0.1:9092";
-const string KAFKA_GROUP_ID = "kdsync";
-const string KAFKA_KDSYNC_HEADER = "kdsync-processed";
+#define REPLICAS 2
+#define KAFKA_BROKERS "127.0.0.1:9092"
+#define KAFKA_TOPIC "test"
+#define KAFKA_GROUP_ID "kdsync"
+#define KAFKA_KDSYNC_TOPIC_SUFFIX "-global"
+#define KAFKA_KDSYNC_HEADER "kdsync-processed"
 
-bool is_already_processed(const Message &message){
-	Message::HeaderListType header_list = message.get_header_list();
+unsigned int replicas = REPLICAS;
+string kafka_brokers = KAFKA_BROKERS;
+string kafka_topic = KAFKA_TOPIC;
+Producer* producer;
 
-	Message::HeaderType *found_header = NULL;
-	auto it = header_list.begin();
-	while(it!= header_list.end() && it->get_name() != KAFKA_KDSYNC_HEADER ){
-		it++;
-	}
+bool is_already_processed(const Message &message) {
+  Message::HeaderListType header_list = message.get_header_list();
 
-	if(it != header_list.end()){
-		if (it -> get_value() == "true"){
-			return true;
+  Message::HeaderType *found_header = NULL;
+  auto it = header_list.begin();
+  while (it != header_list.end() && it->get_name() != KAFKA_KDSYNC_HEADER) {
+    it++;
+  }
 
-		}else{
-			return false;
-		}
-	}
+  if (it != header_list.end()) {
+    if (it->get_value() == "true") {
+      return true;
 
-	return false;
+    } else {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+/*
+  Produces an event to the local cluster
+*/
+void replicate_event(const ReplicatedEvent& event){
+  string replication_topic =
+            event.topic + KAFKA_KDSYNC_TOPIC_SUFFIX;
+  producer->produce(MessageBuilder(replication_topic)       // topic
+                             .partition(event.partition)    // partition
+                             .payload(event.payload)        // payload
+                             .key(event.key)                // key
+                         // offset is automatic
+    );
+  producer->flush();  
 }
 
 
-int main(int argc, char *argv[])
-{
-	spdlog::info("Initialising Derecho");
-	// Read configurations from the command line options as well as the default config file
-    derecho::Conf::initialize(argc, argv);
+int main(int argc, char *argv[]) {
+  spdlog::info("Initialising Derecho");
+  // Read configurations from the command line options as well as the default
+  // config file
+  derecho::Conf::initialize(argc, argv);
 
-	//Define subgroup membership using the default subgroup allocator function
-    derecho::SubgroupInfo subgroup_function {derecho::DefaultSubgroupAllocator({
-        {std::type_index(typeid(SerializableMessage)), derecho::one_subgroup_policy(derecho::fixed_even_shards(1,2))}
-    })};
+  // Define subgroup membership using the default subgroup allocator function
+  derecho::SubgroupInfo subgroup_function{derecho::DefaultSubgroupAllocator(
+      {{std::type_index(typeid(EventList)),
+        derecho::one_subgroup_policy(
+            derecho::fixed_even_shards(1, REPLICAS))}})};
 
-	//Each replicated type needs a factory; this can be used to supply constructor arguments
-    //for the subgroup's initial state. These must take a PersistentRegistry* argument, but
-    //in this case we ignore it because the replicated objects aren't persistent.
-    auto serializable_message_factory = [](persistent::PersistentRegistry*,derecho::subgroup_id_t) { return std::make_unique<SerializableMessage>(); };
+  // Each replicated type needs a factory; this can be used to supply
+  // constructor arguments
+  // for the subgroup's initial state. These must take a PersistentRegistry*
+  // argument, but in this case we ignore it because the replicated objects
+  // aren't persistent.
+  auto event_list_factory = [](persistent::PersistentRegistry *,
+                               derecho::subgroup_id_t) {
+    return std::make_unique<EventList>(REPLICAS);
+  };
 
-	spdlog::info("Initialising group construction/joining");
+  spdlog::info("Initialising group construction/joining");
 
-	derecho::Group<SerializableMessage> group(derecho::CallbackSet{}, subgroup_function, {},
-										std::vector<derecho::view_upcall_t>{},
-										serializable_message_factory);
+  derecho::Group<EventList> group(derecho::CallbackSet{}, subgroup_function, {},
+                                  std::vector<derecho::view_upcall_t>{},
+                                  event_list_factory);
 
-	spdlog::info("Finished group construction/joining");
+  spdlog::info("Finished group construction/joining");
 
-	uint32_t my_id = derecho::getConfUInt32(CONF_DERECHO_LOCAL_ID);
-	
-	spdlog::info("Local id: {}", my_id);
-	
+  uint32_t my_id = derecho::getConfUInt32(CONF_DERECHO_LOCAL_ID);
 
-	//Get subgroup 0 (SerializableMessage). Subgroup index is in order declaration
-	std::vector<node_id_t> message_members = group.get_subgroup_members<SerializableMessage>(0)[0];
+  spdlog::info("Local id: {}", my_id);
 
-	uint32_t rank_in_message = derecho::index_of(message_members, my_id);
+  // Get first and only subgroup (SerializableMessage).
+  // Subgroup index is in declaration order (0)
+  std::vector<node_id_t> message_members =
+      group.get_subgroup_members<EventList>(0)[0];
 
-	spdlog::info("Rank: {}", rank_in_message);
+  uint32_t rank_in_event = derecho::index_of(message_members, my_id);
 
-	derecho::Replicated<SerializableMessage>& message_rpc_handle = group.get_subgroup<SerializableMessage>();
+  spdlog::info("Rank: {}", rank_in_event);
 
-	string kafka_brokers = KAFKA_BROKERS;
-	string kafka_topic = KAFKA_TOPIC;
-	
+  derecho::Replicated<EventList> &message_rpc_handle =
+      group.get_subgroup<EventList>();
 
-	if(argc>1){
-		kafka_brokers = argv[1];
-		if(argc>2){
-			kafka_topic = argv[2];
-		}
-	}
+  // Parse arguments
+  if (argc > 1) {
+    replicas = atoi(argv[1]);
+    if (argc > 2) {
+      kafka_brokers = argv[2];
+      if (argc > 3) {
+        kafka_topic = argv[3];
+      }
+    }
+  }
 
-	Configuration config = {
-		{"metadata.broker.list", kafka_brokers},
-		{"group.id", KAFKA_GROUP_ID}};
+  Configuration kafka_config = {{"metadata.broker.list", kafka_brokers},
+                                {"group.id", KAFKA_GROUP_ID}};
 
-	// Kafka consumer initialization
-	Consumer consumer(config);
+  // Kafka consumer initialization
+  Consumer consumer(kafka_config);
 
-	// Set the assignment callback
-	consumer.set_assignment_callback([&](TopicPartitionList &topic_partitions) {
-		// Here you could fetch offsets and do something, altering the offsets on the
-		// topic_partitions vector if needed
-		cout << "Got assigned " << topic_partitions.size() << " partitions!" << endl;
-	});
+  // Set the assignment callback
+  consumer.set_assignment_callback([&](TopicPartitionList &topic_partitions) {
+    // Here you could fetch offsets and do something, altering the offsets on
+    // the topic_partitions vector if needed
+    spdlog::info("Got assigned {:d} partitions!", topic_partitions.size());
+  });
 
-	// Set the revocation callback
-	consumer.set_revocation_callback([&](const TopicPartitionList &topic_partitions) {
-		cout << topic_partitions.size() << " partitions revoked!" << endl;
-	});
+  // Set the revocation callback
+  consumer.set_revocation_callback(
+      [&](const TopicPartitionList &topic_partitions) {
+        spdlog::info("{:d} partitions revoked!", topic_partitions.size());
+      });
 
-	// Subscribe topics to sync
-	consumer.subscribe({kafka_topic});
+  // Subscribe topics to sync
+  consumer.subscribe({kafka_topic});
 
-	// Kafka producer initialization
-	Producer producer(config);
-	
-	while (true)
-	{
-		//TODO: REMOVE. ONLY FOR DEVELOPMENT DEBUG
-		std::this_thread::sleep_for(std::chrono::seconds(2));
-		derecho::QueryResults<string>results = message_rpc_handle.ordered_send<RPC_NAME(get_message)>();
-		for(auto& reply_pair: results.get()){
-			cout << "Instance: " << reply_pair.first << " Message: " << reply_pair.second.get() << endl;
-		}
+  // Kafka producer initialization
+  producer = new Producer(kafka_config);
 
-		// Poll. This will optionally return a message. It's necessary to check if it's a valid
-		// one before using it
-		Message msg = consumer.poll();
-		if (msg)
-		{
-			if (!msg.get_error())
-			{
-				// It's an actual message. Get the payload and print it to stdout
-				cout << msg.get_payload() << endl;
+  while (true) {
 
-				if(!is_already_processed(msg)){
-					//Send message to the other kdsync instances
-					message_rpc_handle.ordered_send<RPC_NAME(set_message)>((std::string)msg.get_payload());
+    // TODO: REMOVE. ONLY FOR DEVELOPMENT DEBUG
+    //std::this_thread::sleep_for(std::chrono::seconds(2));
 
+    derecho::QueryResults<list<ReplicatedEvent>> events_query =
+      message_rpc_handle.ordered_send<RPC_NAME(get_events)>();
 
-					//Create new message
-					MessageBuilder new_msg(msg);
+    derecho::QueryResults<list<ReplicatedEvent>>::ReplyMap& events_results =
+      events_query.get();
+    
 
-					//Add sync header
-					cppkafka::Message::HeaderType kafka_sync_header(KAFKA_KDSYNC_HEADER, "true");
-					new_msg.header(kafka_sync_header);
+    // Get one list from all results that does not return error
+    list<ReplicatedEvent> local_events; //Empty list
+    bool found = false;
+    auto ptr = events_results.begin();
+    while(!found && ptr != events_results.end()){
+      try {
+        local_events = ptr->second.get();
+        spdlog::info("Using instance {:d} event list", ptr->first);
+        found = true;
+      } catch(const std::exception& e) {
+        spdlog::warn("Couldn't get event list from instance {:d}", ptr->first);
+      }
 
-					producer.produce(new_msg);
-				}
-			}
-			else if (!msg.is_eof())
-			{
-				// Is it an error notification, handle it.
-				// This is explicitly skipping EOF notifications as they're not actually errors,
-				// but that's how rdkafka provides them
-			}
-		}
-	}
+      ptr++;
+    }
 
-	return 0;
+    //Replicate all local events that were not replicated
+    spdlog::info("Local list has {:d} elements", local_events.size());
+
+    //Find first NOT replicated event and continue replicating from this point
+    auto replicate_iter = find_if_not(local_events.begin(), local_events.end(), [my_id] (const ReplicatedEvent& event) { 
+      return event.replicas.find(my_id) != event.replicas.end();
+    });
+
+    // Send and mark all local messages as sent (if any)
+    if(replicate_iter != local_events.end()){
+
+    spdlog::info("Local producing global events...");
+    for (auto ptr = replicate_iter; ptr!=local_events.end(); ptr++){
+      replicate_event(*ptr);
+    }
+    ReplicatedEvent last_event = local_events.back();
+
+    spdlog::info("Telling other instances local replication status");
+    message_rpc_handle.ordered_send<RPC_NAME(mark_produced)>(
+            my_id, last_event.topic, last_event.partition,
+            last_event.offset);
+    }else{
+      //spdlog::info("No messages to replicate");
+    }
+      
+    // Poll. This will optionally return a message. It's necessary to check if
+    // it's a valid one before using it
+    Message msg = consumer.poll();
+    if (msg) {
+      if (!msg.get_error()) {
+        // It's an actual message. Get the payload and print it to stdout
+        string str_payload((char *)msg.get_payload().get_data(),
+                           msg.get_payload().get_size());
+
+        spdlog::info("Received local event:  {:s}", str_payload);
+
+        if (!is_already_processed(msg)) {
+          //Construct a ReplicatedEvent using a cppkafka Message
+          vector<unsigned char> payload_v(msg.get_payload().begin(),
+                                          msg.get_payload().end());
+          vector<unsigned char> key_v(msg.get_key().begin(),
+                                      msg.get_key().end());
+
+          ReplicatedEvent revent(msg.get_topic(), msg.get_partition(),
+                                 payload_v, key_v, msg.get_offset());
+
+          // Send message to the other kdsync instances
+          message_rpc_handle.ordered_send<RPC_NAME(add_event)>(revent);
+        }
+      } else if (!msg.is_eof()) {
+        // Is it an error notification, handle it.
+        // This is explicitly skipping EOF notifications as they're not actually
+        // errors, but that's how rdkafka provides them
+      }
+    }
+  }
+
+  return 0;
 }
