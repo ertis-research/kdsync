@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         cmake \
         librdkafka-dev \
         libboost-all-dev \
+        libfmt-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install cppkafka
@@ -41,10 +42,24 @@ RUN make
 
 FROM execution
 
+# Derecho libary
+COPY --from=build /usr/local/lib/libderecho.so /usr/local/lib/libderecho.so
+COPY --from=build /usr/local/lib/libderecho.so.2.1 /usr/local/lib/libderecho.so.2.1
+
+# Mutils library
+COPY --from=build /usr/local/lib/libmutils.so /usr/local/lib/libmutils.so
+
 # Libcppkafka library
 COPY --from=build /usr/local/lib/libcppkafka.so /usr/local/lib/libcppkafka.so
 COPY --from=build /usr/local/lib/libcppkafka.so.0.3.1 /usr/local/lib/libcppkafka.so.0.3.1
 COPY --from=build /usr/local/include/cppkafka /usr/local/include/cppkafka
+
+# RDMA libraries
+COPY --from=build /usr/local/lib/libfabric.so.1 /usr/local/lib/libfabric.so.1
+COPY --from=build /usr/lib/x86_64-linux-gnu/librdmacm.so.1 /usr/lib/x86_64-linux-gnu/librdmacm.so.1
+COPY --from=build /usr/lib/x86_64-linux-gnu/libibverbs.so.1 /usr/lib/x86_64-linux-gnu/libibverbs.so.1
+COPY --from=build /lib/x86_64-linux-gnu/libnl-3.so.200 /lib/x86_64-linux-gnu/libnl-3.so.200
+COPY --from=build /usr/lib/x86_64-linux-gnu/libnl-route-3.so.200 /usr/lib/x86_64-linux-gnu/libnl-route-3.so.200
 
 # Default Derecho configuration file
 COPY --from=build /usr/local/share/derecho/derecho-sample.cfg /etc/derecho/derecho.cfg

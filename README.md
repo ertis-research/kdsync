@@ -3,8 +3,7 @@ This application will alow synchronization between Apache Kafka clusters
 using [Derecho](https://derecho-project.github.io/) library for synchronization 
 with RDMA or TCP connections.
 
-It is still in early development, so features are missing.
-
+It is still in early development, but it is already working.
 
 ## How to use
 
@@ -17,16 +16,16 @@ This option depends on this [derecho Docker container](https://github.com/ertis-
   ```
 
 * Run an instance from the image<br> 
-  You can specify kdsync arguments as well as a derecho conf file in /etc/derecho/derecho.cfg
+  You can specify kdsync arguments as well as copying a derecho conf file in /etc/derecho/derecho.cfg
   ```
-  docker run -dit --name kdsync kdsync <cluster-brokers> <replicated-topic>
+  docker run -dit --name kdsync --volume /abs/path/to/config/file.cfg:/etc/derecho/derecho.cfg kdsync <number-of-instances> <cluster-brokers> <topic-to-replicate>
   ```
-  If kafka brokers are whithin the same machine:
+  If kafka brokers or other kdsync instances are outside the same network:
   * If running Docker in Linux:<br>
    ```--network="host"``` option should be added to the run 
    option:
     ```
-    docker run --network="host" -dit --name kdsync kdsync <cluster-brokers> <replicated-topic>
+    docker run --network="host" -dit --name kdsync kdsync <number-of-instances> <cluster-brokers> <topic-to-replicate>
     ```
   * If running Docker for Windows or Mac:<br>
    Use ```host.docker.internal``` instead of ```localhost``` in broker addresses.
@@ -48,6 +47,6 @@ This option depends on this [derecho Docker container](https://github.com/ertis-
   ```
 
 * ```
-  ./kdsync <number-of-instances> <cluster-brokers> <replicated-topic>
+  ./kdsync <number-of-instances> <cluster-brokers> <topic-to-replicate>
   ```
 
