@@ -1,7 +1,6 @@
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
 
-#include <chrono>
 #include <derecho/conf/conf.hpp>
 #include <derecho/core/derecho.hpp>
 #include <iostream>
@@ -145,10 +144,6 @@ int main(int argc, char *argv[]) {
   producer = new Producer(kafka_config);
 
   while (true) {
-
-    // TODO: REMOVE. ONLY FOR DEVELOPMENT DEBUG
-    //std::this_thread::sleep_for(std::chrono::seconds(2));
-
     derecho::QueryResults<list<ReplicatedEvent>> events_query =
       message_rpc_handle.ordered_send<RPC_NAME(get_events)>();
 
@@ -176,9 +171,12 @@ int main(int argc, char *argv[]) {
     spdlog::info("Local list has {:d} elements", local_events.size());
 
     //Find first NOT replicated event and continue replicating from this point
-    auto replicate_iter = find_if_not(local_events.begin(), local_events.end(), [my_id] (const ReplicatedEvent& event) { 
-      return event.replicas.find(my_id) != event.replicas.end();
-    });
+    auto replicate_iter = find_if_not(
+		local_events.begin(),
+		local_events.end(),
+		[my_id] (const ReplicatedEvent& event) { 
+			return event.replicas.find(my_id) != event.replicas.end();}
+	);
 
     // Send and mark all local messages as sent (if any)
     if(replicate_iter != local_events.end()){
