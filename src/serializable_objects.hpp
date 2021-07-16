@@ -11,12 +11,6 @@
 
 using namespace std;
 
-/*struct SerializableBuffer : public mutils::ByteRepresentable {
-    int64_t length;
-    char* buffer;
-
-
-}*/
 
 struct ReplicatedEvent : public mutils::ByteRepresentable {
   string topic;
@@ -46,42 +40,17 @@ struct ReplicatedEvent : public mutils::ByteRepresentable {
      this->offset == event.offset;
   }
 
-  // ReplicatedEvent(vector<unsigned char>& payload, set<uint32_t> replicas):
-  // payload(payload), replicas(replicas) {}
+
   DEFAULT_SERIALIZATION_SUPPORT(ReplicatedEvent, topic, partition, payload, key,
                                 offset, replicas);
 };
 
-// template <typename T>
-// class SerializableDeque : public deque<T>, public mutils::ByteRepresentable {
-//     //TODO Research a way to serialize deque with mutils and use it insead
-//     //https://github.com/mpmilano/mutils-serialization/blob/master/SerializationSupport.hpp#L464
-// };
-
-// class ReplicableStr : public mutils::ByteRepresentable {
-//   string str = "<default>";
-
-//  public:
-//   void set_str(const string& str) { this->str = str; }
-
-//   /**
-//    * @returns a deepy copy of the complete list of events at the moment.
-//    */
-//   string get_str() { return str; }
-
-//   ReplicableStr() {}
-//   ReplicableStr(const string& str) : str(str) {}
-
-//   DEFAULT_SERIALIZATION_SUPPORT(ReplicableStr, str);
-//   REGISTER_RPC_FUNCTIONS(ReplicableStr, set_str, get_str);
-// };
 
 class EventList : public mutils::ByteRepresentable {
   unsigned int n_replicas;
   list<ReplicatedEvent> events;
 
  public:
-  // TODO Maybe establish a common offset
   void add_event(const ReplicatedEvent& event) {
     events.push_back(event);  // Put new events at the end of the list
   }
