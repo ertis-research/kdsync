@@ -67,6 +67,17 @@ int main(int argc, char *argv[]) {
   // config file
   derecho::Conf::initialize(argc, argv);
 
+  // Parse arguments
+  if (argc > 1) {
+    replicas = atoi(argv[1]);
+    if (argc > 2) {
+      kafka_brokers = argv[2];
+      if (argc > 3) {
+        kafka_topic = argv[3];
+      }
+    }
+  }
+
   // Define subgroup membership using the default subgroup allocator function
   derecho::SubgroupInfo subgroup_function{derecho::DefaultSubgroupAllocator(
       {{std::type_index(typeid(EventList)),
@@ -106,17 +117,6 @@ int main(int argc, char *argv[]) {
 
   derecho::Replicated<EventList> &message_rpc_handle =
       group.get_subgroup<EventList>();
-
-  // Parse arguments
-  if (argc > 1) {
-    replicas = atoi(argv[1]);
-    if (argc > 2) {
-      kafka_brokers = argv[2];
-      if (argc > 3) {
-        kafka_topic = argv[3];
-      }
-    }
-  }
 
   Configuration kafka_config = {{"metadata.broker.list", kafka_brokers},
                                 {"group.id", KAFKA_GROUP_ID}};
