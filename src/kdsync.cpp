@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
   derecho::SubgroupInfo subgroup_function{derecho::DefaultSubgroupAllocator(
       {{std::type_index(typeid(EventList)),
         derecho::one_subgroup_policy(
-            derecho::fixed_even_shards(1, REPLICAS))}})};
+            derecho::fixed_even_shards(1, replicas))}})};
 
   // Each replicated type needs a factory; this can be used to supply
   // constructor arguments
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
   // aren't persistent.
   auto event_list_factory = [](persistent::PersistentRegistry *,
                                derecho::subgroup_id_t) {
-    return std::make_unique<EventList>(REPLICAS);
+    return std::make_unique<EventList>(replicas);
   };
 
   spdlog::info("Initialising group construction/joining");
