@@ -12,24 +12,38 @@
 using namespace std;
 
 
+struct ReplicatedHeader : public mutils::ByteRepresentable {
+  string key;
+  vector<unsigned char> value;
+
+  ReplicatedHeader(const string& key, vector<unsigned char>& value)
+    : key(key),
+      value(value){};
+
+  DEFAULT_SERIALIZATION_SUPPORT(ReplicatedHeader, key, value);
+};
+
 struct ReplicatedEvent : public mutils::ByteRepresentable {
   string topic;
   int32_t partition;
   vector<unsigned char> payload;
   vector<unsigned char> key;
   int64_t offset;
+  list<ReplicatedHeader> headers;
 
   set<uint32_t> replicas;  // Contains the instances where the event is
                            // successfully replicated
 
   ReplicatedEvent(const string& topic, int32_t partition,
                   vector<unsigned char>& payload, vector<unsigned char>& key,
-                  int64_t offset, set<uint32_t> replicas = {})
+                  int64_t offset, const list<ReplicatedHeader>& headers,
+                  set<uint32_t> replicas = {})
       : topic(topic),
         partition(partition),
         payload(payload),
         key(key),
         offset(offset),
+        headers(headers),
         replicas(replicas){};
 
   bool operator==(const ReplicatedEvent &event){
@@ -42,7 +56,7 @@ struct ReplicatedEvent : public mutils::ByteRepresentable {
 
 
   DEFAULT_SERIALIZATION_SUPPORT(ReplicatedEvent, topic, partition, payload, key,
-                                offset, replicas);
+                                offset, headers, replicas);
 };
 
 

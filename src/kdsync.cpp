@@ -51,12 +51,30 @@ bool is_already_processed(const Message &message) {
 void replicate_event(const ReplicatedEvent& event){
   string replication_topic =
             event.topic + KAFKA_KDSYNC_TOPIC_SUFFIX;
-  producer->produce(MessageBuilder(replication_topic)       // topic
-                             .partition(event.partition)    // partition
-                             .payload(event.payload)        // payload
-                             .key(event.key)                // key
-                         // offset is automatic
+
+  
+  if(event.headers.size()>0){
+    HeaderList<Header<Buffer>> hl(event.headers.size());
+    for(auto rep_header : event.headers){
+      Header<Buffer> header(rep_header.key, rep_header.value);
+      hl.add(header);
+    }
+    producer->produce(MessageBuilder(replication_topic)       // topic
+                            .partition(event.partition)    // partition
+                            .payload(event.payload)        // payload
+                            .key(event.key)                // key
+                            .headers(hl)                   // headers
+                            // offset is automatic
     );
+  }else {
+    producer->produce(MessageBuilder(replication_topic)       // topic
+                            .partition(event.partition)    // partition
+                            .payload(event.payload)        // payload
+                            .key(event.key)                // key
+                            // offset is automatic
+    );
+  }
+
   producer->flush();  
 }
 
@@ -204,7 +222,7 @@ int main(int argc, char *argv[]) {
         string str_payload((char *)msg.get_payload().get_data(),
                            msg.get_payload().get_size());
 
-        spdlog::info("Received local event:  {:s}", str_payload);
+        spdlog::info("Received local event");
 
         if (!is_already_processed(msg)) {
           //Construct a ReplicatedEvent using a cppkafka Message
@@ -212,9 +230,18 @@ int main(int argc, char *argv[]) {
                                           msg.get_payload().end());
           vector<unsigned char> key_v(msg.get_key().begin(),
                                       msg.get_key().end());
+          
+          list<ReplicatedHeader> headers;
 
+          for (auto & event : msg.get_header_list()){
+            vector<unsigned char> header_value_v(event.get_value().begin(),
+                                          event.get_value().end());
+            ReplicatedHeader rh = ReplicatedHeader(event.get_name(), header_value_v);
+            headers.push_back(rh);
+          }
+          
           ReplicatedEvent revent(msg.get_topic(), msg.get_partition(),
-                                 payload_v, key_v, msg.get_offset());
+                                 payload_v, key_v, msg.get_offset(), headers);
 
           // Send message to the other kdsync instances
           message_rpc_handle.ordered_send<RPC_NAME(add_event)>(revent);
