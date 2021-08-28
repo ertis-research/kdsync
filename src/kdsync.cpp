@@ -9,6 +9,8 @@
 #include "serializable_objects.hpp"
 #include "spdlog/spdlog.h"
 
+//#include <chrono>
+
 using namespace std;
 using namespace cppkafka;
 
@@ -114,7 +116,7 @@ int main(int argc, char *argv[]) {
 
   spdlog::info("Initialising group construction/joining");
 
-  derecho::Group<EventList> group(derecho::CallbackSet{}, subgroup_function, {},
+  derecho::Group<EventList> group(derecho::UserMessageCallbacks{}, subgroup_function, {},
                                   std::vector<derecho::view_upcall_t>{},
                                   event_list_factory);
 
@@ -162,15 +164,17 @@ int main(int argc, char *argv[]) {
   producer = new Producer(kafka_config);
 
   while (true) {
-    derecho::QueryResults<list<ReplicatedEvent>> events_query =
+    //std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    derecho::QueryResults<vector<ReplicatedEvent>> events_query =
       message_rpc_handle.ordered_send<RPC_NAME(get_events)>();
 
-    derecho::QueryResults<list<ReplicatedEvent>>::ReplyMap& events_results =
+    derecho::QueryResults<vector<ReplicatedEvent>>::ReplyMap& events_results =
       events_query.get();
     
 
     // Get one list from all results that does not return error
-    list<ReplicatedEvent> local_events; //Empty list
+    vector<ReplicatedEvent> local_events; //Empty list
     bool found = false;
     auto ptr = events_results.begin();
     while(!found && ptr != events_results.end()){
@@ -231,7 +235,7 @@ int main(int argc, char *argv[]) {
           vector<unsigned char> key_v(msg.get_key().begin(),
                                       msg.get_key().end());
           
-          list<ReplicatedHeader> headers;
+          vector<ReplicatedHeader> headers;
 
           for (auto & event : msg.get_header_list()){
             vector<unsigned char> header_value_v(event.get_value().begin(),

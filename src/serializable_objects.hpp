@@ -20,6 +20,11 @@ struct ReplicatedHeader : public mutils::ByteRepresentable {
     : key(key),
       value(value){};
 
+  bool operator==(const ReplicatedHeader &header) const{
+    return this->key == header.key &&
+     this->value == header.value;
+  }
+
   DEFAULT_SERIALIZATION_SUPPORT(ReplicatedHeader, key, value);
 };
 
@@ -29,14 +34,14 @@ struct ReplicatedEvent : public mutils::ByteRepresentable {
   vector<unsigned char> payload;
   vector<unsigned char> key;
   int64_t offset;
-  list<ReplicatedHeader> headers;
+  vector<ReplicatedHeader> headers;
 
   set<uint32_t> replicas;  // Contains the instances where the event is
                            // successfully replicated
 
   ReplicatedEvent(const string& topic, int32_t partition,
                   vector<unsigned char>& payload, vector<unsigned char>& key,
-                  int64_t offset, const list<ReplicatedHeader>& headers,
+                  int64_t offset, const vector<ReplicatedHeader>& headers,
                   set<uint32_t> replicas = {})
       : topic(topic),
         partition(partition),
@@ -46,12 +51,13 @@ struct ReplicatedEvent : public mutils::ByteRepresentable {
         headers(headers),
         replicas(replicas){};
 
-  bool operator==(const ReplicatedEvent &event){
+  bool operator==(const ReplicatedEvent &event) const{
     return this->topic == event.topic &&
      this->partition == event.partition &&
      this->payload == event.payload &&
      this->key == event.key &&
-     this->offset == event.offset;
+     this->offset == event.offset &&
+     this->headers == event.headers;
   }
 
 
@@ -62,7 +68,7 @@ struct ReplicatedEvent : public mutils::ByteRepresentable {
 
 class EventList : public mutils::ByteRepresentable {
   unsigned int n_replicas;
-  list<ReplicatedEvent> events;
+  vector<ReplicatedEvent> events;
 
  public:
   void add_event(const ReplicatedEvent& event) {
@@ -86,7 +92,7 @@ class EventList : public mutils::ByteRepresentable {
   void mark_produced(uint32_t derecho_id, const string& last_topic,
                      int32_t last_partition, int64_t last_offset) {
     /*
-    Mark all events as produced until the specified id and topic is reached
+    Mark all events as produced until the specified id and topic is reached.
     Safer option could be to traverse the list in reversed order. If event is
     not found, it doesn't mark anything. However, if the event is not found
     it should mean that was deleted before (though also this situation
@@ -115,7 +121,7 @@ class EventList : public mutils::ByteRepresentable {
     }
 
     //spdlog::info("begin: {:x}, completed: {:x}", (void*)&*events.begin(), (void*)&*last_completed);
-    spdlog::info("Deleting completed events");
+    //spdlog::info("Deleting completed events");
     // Delete completed nodes
     events.erase(events.begin(), last_completed);
   }
@@ -123,12 +129,12 @@ class EventList : public mutils::ByteRepresentable {
   /**
    * @returns a deepy copy of the complete list of events at the moment.
    */
-  list<ReplicatedEvent> get_events() { return events; }
+  vector<ReplicatedEvent> get_events() const { return events; }
 
   EventList(unsigned int n_replicas) : n_replicas(n_replicas) {}
-  EventList(unsigned int n_replicas, const list<ReplicatedEvent>& events)
+  EventList(unsigned int n_replicas, const vector<ReplicatedEvent>& events)
       : n_replicas(n_replicas), events(events) {}
 
   DEFAULT_SERIALIZATION_SUPPORT(EventList, n_replicas, events);
-  REGISTER_RPC_FUNCTIONS(EventList, add_event, mark_produced, get_events);
+  REGISTER_RPC_FUNCTIONS(EventList, ORDERED_TARGETS(add_event, mark_produced, get_events));
 };

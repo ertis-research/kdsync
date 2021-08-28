@@ -31,13 +31,16 @@ cd /opt # Workdir for installation
 ## Install Derecho ##
 #####################
 
-git clone -b v2.1.0 --depth 1 https://github.com/Derecho-Project/derecho.git
+git clone -b v2.2.1 --depth 1 https://github.com/Derecho-Project/derecho.git
 
 (
     export LC_ALL=C # Use default language (presumably English)
 
     # Install libfabric
     ./derecho/scripts/prerequisites/install-libfabric.sh
+
+    # Install json
+    ./derecho/scripts/prerequisites/install-json.sh
 
     # Instal mutils
     ./derecho/scripts/prerequisites/install-mutils.sh
