@@ -138,17 +138,20 @@ int main(int argc, char *argv[]) {
   derecho::Replicated<EventList> &message_rpc_handle =
       group.get_subgroup<EventList>();
 
-  Configuration kafka_config = {{"metadata.broker.list", kafka_brokers},
-                                {"group.id", KAFKA_GROUP_ID}};
+  Configuration consumer_config = {{"metadata.broker.list", kafka_brokers},
+                                  {"group.id", KAFKA_GROUP_ID}};
+
+  Configuration producer_config = {{"metadata.broker.list", kafka_brokers}};
+
 
   // Kafka consumer initialization
-  Consumer consumer(kafka_config);
+  Consumer consumer(consumer_config);
 
   // Set the assignment callback
   consumer.set_assignment_callback([&](TopicPartitionList &topic_partitions) {
     // Here you could fetch offsets and do something, altering the offsets on
     // the topic_partitions vector if needed
-    spdlog::info("Got assigned {:d} partitions!", topic_partitions.size());
+    spdlog::info("Kafka consumer got assigned {:d} partitions", topic_partitions.size());
   });
 
   // Set the revocation callback
@@ -161,8 +164,9 @@ int main(int argc, char *argv[]) {
   consumer.subscribe({kafka_topic});
 
   // Kafka producer initialization
-  producer = new Producer(kafka_config);
+  producer = new Producer(producer_config);
 
+  spdlog::info("Kdsync has started the main loop");
   while (true) {
     //std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
@@ -180,7 +184,7 @@ int main(int argc, char *argv[]) {
     while(!found && ptr != events_results.end()){
       try {
         local_events = ptr->second.get();
-        spdlog::info("Using instance {:d} event list", ptr->first);
+        spdlog::trace("Using instance {:d} event list", ptr->first);
         found = true;
       } catch(const std::exception& e) {
         spdlog::warn("Couldn't get event list from instance {:d}", ptr->first);
@@ -190,31 +194,35 @@ int main(int argc, char *argv[]) {
     }
 
     //Replicate all local events that were not replicated
-    spdlog::info("Local list has {:d} elements", local_events.size());
 
-    //Find first NOT replicated event and continue replicating from this point
-    auto replicate_iter = find_if_not(
-		local_events.begin(),
-		local_events.end(),
-		[my_id] (const ReplicatedEvent& event) { 
-			return event.replicas.find(my_id) != event.replicas.end();}
-	);
+    if(local_events.size()>0 ){
+      spdlog::info("Obtained list has {:d} elements", local_events.size());
 
-    // Send and mark all local messages as sent (if any)
-    if(replicate_iter != local_events.end()){
+      //Find first NOT replicated event and continue replicating from this point
+      auto replicate_iter = find_if_not(
+      local_events.begin(),
+      local_events.end(),
+      [my_id] (const ReplicatedEvent& event) { 
+        return event.replicas.find(my_id) != event.replicas.end();}
+      );
 
-    spdlog::info("Local producing global events...");
-    for (auto ptr = replicate_iter; ptr!=local_events.end(); ptr++){
-      replicate_event(*ptr);
-    }
-    ReplicatedEvent last_event = local_events.back();
+      // Send and mark all local messages as sent (if any)
+      if(replicate_iter != local_events.end()){
 
-    spdlog::info("Telling other instances local replication status");
-    message_rpc_handle.ordered_send<RPC_NAME(mark_produced)>(
-            my_id, last_event.topic, last_event.partition,
-            last_event.offset);
-    }else{
-      //spdlog::info("No messages to replicate");
+      spdlog::info("Local producing obtained events...");
+      for (auto ptr = replicate_iter; ptr!=local_events.end(); ptr++){
+        replicate_event(*ptr);
+      }
+      ReplicatedEvent last_event = local_events.back();
+
+      spdlog::info("Telling other instances local replication status");
+      message_rpc_handle.ordered_send<RPC_NAME(mark_produced)>(
+              my_id, last_event.topic, last_event.partition,
+              last_event.offset);
+      }else{
+        //spdlog::info("No messages to replicate");
+      }
+
     }
       
     // Poll. This will optionally return a message. It's necessary to check if
