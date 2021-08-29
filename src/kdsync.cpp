@@ -82,6 +82,14 @@ void replicate_event(const ReplicatedEvent& event){
 
 
 int main(int argc, char *argv[]) {
+  
+  if(getenv("KDSYNC_DEBUG") != NULL){
+    spdlog::set_level(spdlog::level::debug);
+  }else{
+    spdlog::set_level(spdlog::level::warn);
+  }
+
+
   spdlog::info("Initialising Derecho");
   // Read configurations from the command line options as well as the default
   // config file
