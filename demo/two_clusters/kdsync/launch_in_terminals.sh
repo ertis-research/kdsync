@@ -23,7 +23,7 @@ run_terminal() { # args, derecho_cfg_file, title
 SLEEP_TIME=5
 
 run_terminal "2 localhost:9092 test" "`dirname $0`/config/derecho_0.cfg" "localhost:9092" &
-sleep $SLEEP_TIME
+#sleep $SLEEP_TIME
 run_terminal "2 localhost:9094 test" "`dirname $0`/config/derecho_1.cfg" "localhost:9094" &
 
 wait
