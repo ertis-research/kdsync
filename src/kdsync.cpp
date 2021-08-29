@@ -20,7 +20,6 @@ using namespace cppkafka;
 #define KAFKA_TOPIC "test"
 #define KAFKA_GROUP_ID "kdsync"
 #define KAFKA_KDSYNC_TOPIC_SUFFIX "-global"
-#define KAFKA_KDSYNC_HEADER "kdsync-processed"
 
 unsigned int replicas = REPLICAS;
 unsigned int event_chunk = EVENT_CHUNK;
@@ -28,26 +27,6 @@ string kafka_brokers = KAFKA_BROKERS;
 string kafka_topic = KAFKA_TOPIC;
 Producer* producer;
 
-bool is_already_processed(const Message &message) {
-  Message::HeaderListType header_list = message.get_header_list();
-
-  Message::HeaderType *found_header = NULL;
-  auto it = header_list.begin();
-  while (it != header_list.end() && it->get_name() != KAFKA_KDSYNC_HEADER) {
-    it++;
-  }
-
-  if (it != header_list.end()) {
-    if (it->get_value() == "true") {
-      return true;
-
-    } else {
-      return false;
-    }
-  }
-
-  return false;
-}
 
 /*
   Produces an event to the local cluster
@@ -238,7 +217,6 @@ int main(int argc, char *argv[]) {
 
         spdlog::info("Received local event");
 
-        if (!is_already_processed(msg)) {
           //Construct a ReplicatedEvent using a cppkafka Message
           vector<unsigned char> payload_v(msg.get_payload().begin(),
                                           msg.get_payload().end());
@@ -259,7 +237,6 @@ int main(int argc, char *argv[]) {
 
           // Send message to the other kdsync instances
           message_rpc_handle.ordered_send<RPC_NAME(add_event)>(revent);
-        }
       } else if (!msg.is_eof()) {
         // Is it an error notification, handle it.
         // This is explicitly skipping EOF notifications as they're not actually
