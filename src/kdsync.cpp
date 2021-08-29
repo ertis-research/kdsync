@@ -15,6 +15,7 @@ using namespace std;
 using namespace cppkafka;
 
 #define REPLICAS 2
+#define EVENT_CHUNK 10
 #define KAFKA_BROKERS "127.0.0.1:9092"
 #define KAFKA_TOPIC "test"
 #define KAFKA_GROUP_ID "kdsync"
@@ -22,6 +23,7 @@ using namespace cppkafka;
 #define KAFKA_KDSYNC_HEADER "kdsync-processed"
 
 unsigned int replicas = REPLICAS;
+unsigned int event_chunk = EVENT_CHUNK;
 string kafka_brokers = KAFKA_BROKERS;
 string kafka_topic = KAFKA_TOPIC;
 Producer* producer;
@@ -82,11 +84,16 @@ void replicate_event(const ReplicatedEvent& event){
 
 
 int main(int argc, char *argv[]) {
-  
+    // Read environment
   if(getenv("KDSYNC_DEBUG") != NULL){
     spdlog::set_level(spdlog::level::debug);
   }else{
     spdlog::set_level(spdlog::level::warn);
+  }
+
+  const char* str_event_chunk = getenv("EVENT_CHUNK");
+  if(str_event_chunk != NULL){
+    event_chunk = atoi(str_event_chunk);
   }
 
 
@@ -119,7 +126,7 @@ int main(int argc, char *argv[]) {
   // aren't persistent.
   auto event_list_factory = [](persistent::PersistentRegistry *,
                                derecho::subgroup_id_t) {
-    return std::make_unique<EventList>(replicas);
+    return std::make_unique<EventList>(replicas, event_chunk);
   };
 
   spdlog::info("Initialising group construction/joining");
@@ -179,58 +186,45 @@ int main(int argc, char *argv[]) {
     //std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     derecho::QueryResults<vector<ReplicatedEvent>> events_query =
-      message_rpc_handle.ordered_send<RPC_NAME(get_events)>();
+      message_rpc_handle.ordered_send<RPC_NAME(get_events)>(my_id);
 
     derecho::QueryResults<vector<ReplicatedEvent>>::ReplyMap& events_results =
       events_query.get();
     
 
-    // Get one list from all results that does not return error
-    vector<ReplicatedEvent> local_events; //Empty list
+    // Get longest list from all replies that does not return error
+    vector<ReplicatedEvent> events_to_replicate; //Empty list
     bool found = false;
     auto ptr = events_results.begin();
-    while(!found && ptr != events_results.end()){
+    int longest_list = 0;
+    while(ptr != events_results.end()){
       try {
-        local_events = ptr->second.get();
-        spdlog::trace("Using instance {:d} event list", ptr->first);
-        found = true;
+        vector<ReplicatedEvent> received_list = ptr->second.get();
+        if (received_list.size()>longest_list){
+          longest_list = received_list.size();
+          events_to_replicate = received_list;
+        }
       } catch(const std::exception& e) {
-        spdlog::warn("Couldn't get event list from instance {:d}", ptr->first);
+        spdlog::warn("Couldn't recover event list from instance {:d}", ptr->first);
       }
 
       ptr++;
     }
 
-    //Replicate all local events that were not replicated
+    //Replicate all events from list
+    if(events_to_replicate.size()>0 ){
+      spdlog::info("Received {:d} elements to replicate locally", events_to_replicate.size());
 
-    if(local_events.size()>0 ){
-      spdlog::info("Obtained list has {:d} elements", local_events.size());
-
-      //Find first NOT replicated event and continue replicating from this point
-      auto replicate_iter = find_if_not(
-      local_events.begin(),
-      local_events.end(),
-      [my_id] (const ReplicatedEvent& event) { 
-        return event.replicas.find(my_id) != event.replicas.end();}
-      );
-
-      // Send and mark all local messages as sent (if any)
-      if(replicate_iter != local_events.end()){
-
-      spdlog::info("Local producing obtained events...");
-      for (auto ptr = replicate_iter; ptr!=local_events.end(); ptr++){
-        replicate_event(*ptr);
+      for (auto event : events_to_replicate){
+        replicate_event(event);
       }
-      ReplicatedEvent last_event = local_events.back();
 
-      spdlog::info("Telling other instances local replication status");
+      ReplicatedEvent last_event = events_to_replicate.back();
+
+      spdlog::info("Marking events as replicated");
       message_rpc_handle.ordered_send<RPC_NAME(mark_produced)>(
               my_id, last_event.topic, last_event.partition,
               last_event.offset);
-      }else{
-        //spdlog::info("No messages to replicate");
-      }
-
     }
       
     // Poll. This will optionally return a message. It's necessary to check if

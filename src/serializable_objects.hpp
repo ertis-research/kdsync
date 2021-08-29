@@ -68,6 +68,7 @@ struct ReplicatedEvent : public mutils::ByteRepresentable {
 
 class EventList : public mutils::ByteRepresentable {
   unsigned int n_replicas;
+  int event_chunk; //number of events to retrieve at the same time
   vector<ReplicatedEvent> events;
 
  public:
@@ -127,14 +128,32 @@ class EventList : public mutils::ByteRepresentable {
   }
 
   /**
-   * @returns a deepy copy of the complete list of events at the moment.
+   * @returns list of some events that aren't marked as replicated by provided
+   * derecho id.
    */
-  vector<ReplicatedEvent> get_events() const { return events; }
+  vector<ReplicatedEvent> get_events(uint32_t derecho_id) const { 
+    auto first_not_replicated = find_if_not(
+      events.begin(), 
+      events.end(),
+      [derecho_id](const ReplicatedEvent& event) {
+        return event.replicas.find(derecho_id) != event.replicas.end();
+      }
+    );
 
-  EventList(unsigned int n_replicas) : n_replicas(n_replicas) {}
-  EventList(unsigned int n_replicas, const vector<ReplicatedEvent>& events)
-      : n_replicas(n_replicas), events(events) {}
+    int remaining = distance(first_not_replicated, events.end());
 
-  DEFAULT_SERIALIZATION_SUPPORT(EventList, n_replicas, events);
+    vector<ReplicatedEvent> result(
+      first_not_replicated,
+      next(first_not_replicated, min(event_chunk, remaining))
+      );
+
+    return result;
+  }
+
+  EventList(unsigned int n_replicas, unsigned int event_chunk) : n_replicas(n_replicas), event_chunk(event_chunk) {}
+  EventList(unsigned int n_replicas, unsigned int event_chunk, const vector<ReplicatedEvent>& events)
+      : n_replicas(n_replicas), event_chunk(event_chunk), events(events) {}
+
+  DEFAULT_SERIALIZATION_SUPPORT(EventList, n_replicas, event_chunk, events);
   REGISTER_RPC_FUNCTIONS(EventList, ORDERED_TARGETS(add_event, mark_produced, get_events));
 };
