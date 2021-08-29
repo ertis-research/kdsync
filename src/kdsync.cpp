@@ -9,41 +9,24 @@
 #include "serializable_objects.hpp"
 #include "spdlog/spdlog.h"
 
+//#include <chrono>
+
 using namespace std;
 using namespace cppkafka;
 
 #define REPLICAS 2
+#define EVENT_CHUNK 10
 #define KAFKA_BROKERS "127.0.0.1:9092"
 #define KAFKA_TOPIC "test"
 #define KAFKA_GROUP_ID "kdsync"
 #define KAFKA_KDSYNC_TOPIC_SUFFIX "-global"
-#define KAFKA_KDSYNC_HEADER "kdsync-processed"
 
 unsigned int replicas = REPLICAS;
+unsigned int event_chunk = EVENT_CHUNK;
 string kafka_brokers = KAFKA_BROKERS;
 string kafka_topic = KAFKA_TOPIC;
 Producer* producer;
 
-bool is_already_processed(const Message &message) {
-  Message::HeaderListType header_list = message.get_header_list();
-
-  Message::HeaderType *found_header = NULL;
-  auto it = header_list.begin();
-  while (it != header_list.end() && it->get_name() != KAFKA_KDSYNC_HEADER) {
-    it++;
-  }
-
-  if (it != header_list.end()) {
-    if (it->get_value() == "true") {
-      return true;
-
-    } else {
-      return false;
-    }
-  }
-
-  return false;
-}
 
 /*
   Produces an event to the local cluster
@@ -80,6 +63,19 @@ void replicate_event(const ReplicatedEvent& event){
 
 
 int main(int argc, char *argv[]) {
+    // Read environment
+  if(getenv("KDSYNC_DEBUG") != NULL){
+    spdlog::set_level(spdlog::level::debug);
+  }else{
+    spdlog::set_level(spdlog::level::warn);
+  }
+
+  const char* str_event_chunk = getenv("EVENT_CHUNK");
+  if(str_event_chunk != NULL){
+    event_chunk = atoi(str_event_chunk);
+  }
+
+
   spdlog::info("Initialising Derecho");
   // Read configurations from the command line options as well as the default
   // config file
@@ -109,12 +105,12 @@ int main(int argc, char *argv[]) {
   // aren't persistent.
   auto event_list_factory = [](persistent::PersistentRegistry *,
                                derecho::subgroup_id_t) {
-    return std::make_unique<EventList>(replicas);
+    return std::make_unique<EventList>(replicas, event_chunk);
   };
 
   spdlog::info("Initialising group construction/joining");
 
-  derecho::Group<EventList> group(derecho::CallbackSet{}, subgroup_function, {},
+  derecho::Group<EventList> group(derecho::UserMessageCallbacks{}, subgroup_function, {},
                                   std::vector<derecho::view_upcall_t>{},
                                   event_list_factory);
 
@@ -136,17 +132,20 @@ int main(int argc, char *argv[]) {
   derecho::Replicated<EventList> &message_rpc_handle =
       group.get_subgroup<EventList>();
 
-  Configuration kafka_config = {{"metadata.broker.list", kafka_brokers},
-                                {"group.id", KAFKA_GROUP_ID}};
+  Configuration consumer_config = {{"metadata.broker.list", kafka_brokers},
+                                  {"group.id", KAFKA_GROUP_ID}};
+
+  Configuration producer_config = {{"metadata.broker.list", kafka_brokers}};
+
 
   // Kafka consumer initialization
-  Consumer consumer(kafka_config);
+  Consumer consumer(consumer_config);
 
   // Set the assignment callback
   consumer.set_assignment_callback([&](TopicPartitionList &topic_partitions) {
     // Here you could fetch offsets and do something, altering the offsets on
     // the topic_partitions vector if needed
-    spdlog::info("Got assigned {:d} partitions!", topic_partitions.size());
+    spdlog::info("Kafka consumer got assigned {:d} partitions", topic_partitions.size());
   });
 
   // Set the revocation callback
@@ -159,58 +158,52 @@ int main(int argc, char *argv[]) {
   consumer.subscribe({kafka_topic});
 
   // Kafka producer initialization
-  producer = new Producer(kafka_config);
+  producer = new Producer(producer_config);
 
+  spdlog::info("Kdsync has started the main loop");
   while (true) {
-    derecho::QueryResults<list<ReplicatedEvent>> events_query =
-      message_rpc_handle.ordered_send<RPC_NAME(get_events)>();
+    //std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    derecho::QueryResults<list<ReplicatedEvent>>::ReplyMap& events_results =
+    derecho::QueryResults<vector<ReplicatedEvent>> events_query =
+      message_rpc_handle.ordered_send<RPC_NAME(get_events)>(my_id);
+
+    derecho::QueryResults<vector<ReplicatedEvent>>::ReplyMap& events_results =
       events_query.get();
     
 
-    // Get one list from all results that does not return error
-    list<ReplicatedEvent> local_events; //Empty list
+    // Get longest list from all replies that does not return error
+    vector<ReplicatedEvent> events_to_replicate; //Empty list
     bool found = false;
     auto ptr = events_results.begin();
-    while(!found && ptr != events_results.end()){
+    int longest_list = 0;
+    while(ptr != events_results.end()){
       try {
-        local_events = ptr->second.get();
-        spdlog::info("Using instance {:d} event list", ptr->first);
-        found = true;
+        vector<ReplicatedEvent> received_list = ptr->second.get();
+        if (received_list.size()>longest_list){
+          longest_list = received_list.size();
+          events_to_replicate = received_list;
+        }
       } catch(const std::exception& e) {
-        spdlog::warn("Couldn't get event list from instance {:d}", ptr->first);
+        spdlog::warn("Couldn't recover event list from instance {:d}", ptr->first);
       }
 
       ptr++;
     }
 
-    //Replicate all local events that were not replicated
-    spdlog::info("Local list has {:d} elements", local_events.size());
+    //Replicate all events from list
+    if(events_to_replicate.size()>0 ){
+      spdlog::info("Received {:d} elements to replicate locally", events_to_replicate.size());
 
-    //Find first NOT replicated event and continue replicating from this point
-    auto replicate_iter = find_if_not(
-		local_events.begin(),
-		local_events.end(),
-		[my_id] (const ReplicatedEvent& event) { 
-			return event.replicas.find(my_id) != event.replicas.end();}
-	);
+      for (auto event : events_to_replicate){
+        replicate_event(event);
+      }
 
-    // Send and mark all local messages as sent (if any)
-    if(replicate_iter != local_events.end()){
+      ReplicatedEvent last_event = events_to_replicate.back();
 
-    spdlog::info("Local producing global events...");
-    for (auto ptr = replicate_iter; ptr!=local_events.end(); ptr++){
-      replicate_event(*ptr);
-    }
-    ReplicatedEvent last_event = local_events.back();
-
-    spdlog::info("Telling other instances local replication status");
-    message_rpc_handle.ordered_send<RPC_NAME(mark_produced)>(
-            my_id, last_event.topic, last_event.partition,
-            last_event.offset);
-    }else{
-      //spdlog::info("No messages to replicate");
+      spdlog::info("Marking events as replicated");
+      message_rpc_handle.ordered_send<RPC_NAME(mark_produced)>(
+              my_id, last_event.topic, last_event.partition,
+              last_event.offset);
     }
       
     // Poll. This will optionally return a message. It's necessary to check if
@@ -224,14 +217,13 @@ int main(int argc, char *argv[]) {
 
         spdlog::info("Received local event");
 
-        if (!is_already_processed(msg)) {
           //Construct a ReplicatedEvent using a cppkafka Message
           vector<unsigned char> payload_v(msg.get_payload().begin(),
                                           msg.get_payload().end());
           vector<unsigned char> key_v(msg.get_key().begin(),
                                       msg.get_key().end());
           
-          list<ReplicatedHeader> headers;
+          vector<ReplicatedHeader> headers;
 
           for (auto & event : msg.get_header_list()){
             vector<unsigned char> header_value_v(event.get_value().begin(),
@@ -245,7 +237,6 @@ int main(int argc, char *argv[]) {
 
           // Send message to the other kdsync instances
           message_rpc_handle.ordered_send<RPC_NAME(add_event)>(revent);
-        }
       } else if (!msg.is_eof()) {
         // Is it an error notification, handle it.
         // This is explicitly skipping EOF notifications as they're not actually
