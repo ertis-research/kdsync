@@ -150,10 +150,40 @@ class EventList : public mutils::ByteRepresentable {
     return result;
   }
 
+  vector<ReplicatedEvent> get_events_from(const string& last_topic,
+                     int32_t last_partition, int64_t last_offset) const {
+
+    auto last_replicated = find_if(
+      events.begin(), 
+      events.end(),
+      [=, &last_topic](const ReplicatedEvent& event) {
+        return event.topic == last_topic && event.partition == last_partition &&
+              event.offset == last_offset;
+      }
+    );
+
+    //If not found, it should mean that all messages are new
+    auto first_not_replicated = (last_replicated == events.end())? 
+       events.begin() : next(last_replicated);
+
+    int remaining = distance(first_not_replicated, events.end());
+
+    vector<ReplicatedEvent> result(
+      first_not_replicated,
+      next(first_not_replicated, min(event_chunk, remaining))
+      );
+
+      if(result.size()>0)
+        spdlog::info("from size: {:d}", result.size());
+
+    return result;
+  }
+
   EventList(unsigned int n_replicas, unsigned int event_chunk) : n_replicas(n_replicas), event_chunk(event_chunk) {}
   EventList(unsigned int n_replicas, unsigned int event_chunk, const vector<ReplicatedEvent>& events)
-      : n_replicas(n_replicas), event_chunk(event_chunk), events(events) {}
+      : n_replicas(n_replicas), event_chunk((event_chunk<1)? INT_MAX : event_chunk ), events(events) {}
 
   DEFAULT_SERIALIZATION_SUPPORT(EventList, n_replicas, event_chunk, events);
-  REGISTER_RPC_FUNCTIONS(EventList, ORDERED_TARGETS(add_event, mark_produced, get_events));
+  REGISTER_RPC_FUNCTIONS(EventList, ORDERED_TARGETS(add_event, mark_produced, 
+    get_events, get_events_from), P2P_TARGETS(get_events, get_events_from));
 };
