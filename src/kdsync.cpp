@@ -226,10 +226,19 @@ int main(int argc, char *argv[]) {
 
   message_rpc_handle = &group.get_subgroup<EventList>();
 
-  Configuration consumer_config = {{"metadata.broker.list", kafka_brokers},
-                                  {"group.id", KAFKA_GROUP_ID}};
+  //https://docs.confluent.io/4.0.0/clients/librdkafka/CONFIGURATION_8md.html
+  Configuration consumer_config = {
+                                    {"metadata.broker.list", kafka_brokers},
+                                    {"group.id", KAFKA_GROUP_ID},
+                                    { "message.max.bytes", "2097152" }, //2 MiB
+                                    { "fetch.message.max.bytes", "2097152" } //2 MiB
+                                  };
 
-  Configuration producer_config = {{"metadata.broker.list", kafka_brokers}};
+  Configuration producer_config = {
+                                    {"metadata.broker.list", kafka_brokers},
+                                    { "message.max.bytes", "2097152" }, //2 MiB
+                                    { "fetch.message.max.bytes", "2097152" } //2 MiB
+                                  };
 
 
   // Kafka consumer initialization

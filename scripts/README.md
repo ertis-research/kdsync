@@ -5,7 +5,7 @@ They all need to be run with superuser permissions.
 * `install_kafka_and_configure_service.sh`: It will download Apache Kafka from
   the Internet and configure a service named `kafka`. Before the service starts,
   the Kafka server configuration file can be customized.
-* `configure_zookeper_service.sh`: If run after previous script, it will configure
+* `configure_zookeeper_service.sh`: If run after previous script, it will configure
   Zookeeper as a new service named `zookeeper` and configure the existing Kafka
   service to start after this one.
 
