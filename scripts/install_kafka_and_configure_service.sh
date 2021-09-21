@@ -7,7 +7,7 @@ set -x # Show arguments executed
 apt-get install -y --no-install-recommends openjdk-11-jdk
 
 TMPFILE=`mktemp`
-curl "https://ftp.cixug.es/apache/kafka/2.8.0/kafka_2.13-2.8.0.tgz" -o $TMPFILE
+curl "https://ftp.cixug.es/apache/kafka/2.8.1/kafka_2.13-2.8.1.tgz" -o $TMPFILE
 mkdir -p /opt/kafka
 cd /opt/kafka
 tar -xzf $TMPFILE --strip 1
