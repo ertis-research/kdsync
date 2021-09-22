@@ -13,10 +13,6 @@ leader_ip = 192.168.44.19
 leader_gms_port = 23580
 # leader external port - the leader's external port
 leader_external_port = 32645
-# list of leaders to contact during a restart in priority order
-restart_leaders = 192.168.44.19,192.168.44.21,192.168.44.22
-# list of GMS ports of the restart leaders, in the same order
-restart_leader_ports = 23580,23580,23580
 # my local id - each node should have a different id
 local_id = 0
 # my local ip address
